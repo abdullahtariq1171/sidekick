@@ -98,11 +98,28 @@ try {
     const text = line.trim();
     if (!text) continue;
     if (text === "exit" || text === "quit") break;
-    await respond(text);
+    try {
+      await respond(text);
+    } catch (error) {
+      console.error(`\n${formatError(error)}`);
+    }
   }
-} catch {
-  // Ctrl+D closes stdin and rejects the pending question.
+} catch (error) {
+  // Ctrl+D aborts the pending prompt. Anything else is a real failure.
+  if (!isInputClosed(error)) {
+    console.error(`\n${formatError(error)}`);
+    process.exitCode = 1;
+  }
 } finally {
   rl.close();
   console.log();
+}
+
+function isInputClosed(error: unknown): boolean {
+  if (!(error instanceof Error) || !("code" in error)) return false;
+  return error.code === "ABORT_ERR" || error.code === "ERR_USE_AFTER_CLOSE";
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
