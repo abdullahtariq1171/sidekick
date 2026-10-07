@@ -1,7 +1,11 @@
 import { HumanMessage } from "@langchain/core/messages";
+import { mkdir, readdir, rm } from "node:fs/promises";
+import path from "node:path";
 import { app } from "../agent.js";
-import { recursionLimit } from "../config.js";
+import { recursionLimit, workspaceDir } from "../config.js";
 import { cases, type EvalCase } from "./cases.js";
+
+const filter = process.argv[2]?.trim().toLowerCase();
 
 function textOf(message: { content: unknown }): string {
   return typeof message.content === "string"
@@ -20,8 +24,17 @@ function finalAnswer(messages: { getType: () => string; content: unknown }[]): s
   return "";
 }
 
+/** Wipe and recreate the workspace so cases don't see each other's files. */
+async function cleanWorkspace(): Promise<void> {
+  await rm(workspaceDir, { recursive: true, force: true });
+  await mkdir(workspaceDir, { recursive: true });
+}
+
 async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
   console.log(`\nrunning ${evalCase.name}...`);
+
+  await cleanWorkspace();
+  if (evalCase.setup) await evalCase.setup();
 
   try {
     const result = await app.invoke(
@@ -33,6 +46,8 @@ async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
     const reason = await evalCase.check({
       answer,
       successCriteriaMet: result.evaluation?.successCriteriaMet === true,
+      userInputNeeded: result.evaluation?.userInputNeeded === true,
+      messages: result.messages,
     });
 
     if (reason) {
@@ -50,13 +65,24 @@ async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
     console.log(`FAIL  ${evalCase.name}`);
     console.log(`      run threw: ${message}`);
     return false;
+  } finally {
+    if (evalCase.teardown) await evalCase.teardown();
   }
 }
 
-let passed = 0;
-for (const [index, evalCase] of cases.entries()) {
-  if (await runCase(evalCase, index)) passed += 1;
+const selected = filter
+  ? cases.filter((c) => c.name.toLowerCase().includes(filter))
+  : cases;
+
+if (selected.length === 0) {
+  console.log(`no cases match "${filter}"`);
+  process.exitCode = 1;
 }
 
-console.log(`\n${passed}/${cases.length} passed`);
-if (passed !== cases.length) process.exitCode = 1;
+let passed = 0;
+for (const [index, evalCase] of selected.entries()) {
+  if (await runCase(evalCase, cases.indexOf(evalCase))) passed += 1;
+}
+
+console.log(`\n${passed}/${selected.length} passed`);
+if (passed !== selected.length) process.exitCode = 1;

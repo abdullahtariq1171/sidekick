@@ -3,7 +3,7 @@ import { tavily } from "@tavily/core";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { tavilyApiKey, workspaceDir } from "./config.js";
+import { workspaceDir } from "./config.js";
 
 await mkdir(workspaceDir, { recursive: true });
 
@@ -47,11 +47,12 @@ const calculateTool = tool(
 
 const searchWebTool = tool(
   async ({ query }) => {
-    if (!tavilyApiKey) {
+    const apiKey = process.env.TAVILY_API_KEY ?? "";
+    if (!apiKey) {
       return "search_web is unavailable: set TAVILY_API_KEY in .env";
     }
 
-    const client = tavily({ apiKey: tavilyApiKey });
+    const client = tavily({ apiKey });
     const rawResults = await client.search(query);
 
     if (rawResults?.results?.length) {

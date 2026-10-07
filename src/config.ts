@@ -19,9 +19,6 @@ function requiredEnv(name: string): string {
 /** Chat completions through the Command Code gateway. */
 export const commandCodeKey = requiredEnv("COMMAND_CODE_KEY");
 
-/** Optional at startup. `search_web` reports a clear error if this is unset. */
-export const tavilyApiKey = process.env.TAVILY_API_KEY ?? "";
-
 export const modelName = "deepseek/deepseek-v4-flash";
 export const commandCodeBaseURL = "https://api.commandcode.ai/provider/v1";
 
