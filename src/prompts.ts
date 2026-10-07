@@ -6,7 +6,6 @@ If you state a fact, include the source URL from the tool result.
 If a message begins with "[Evaluator feedback]:", revise the previous answer to address that critique.`;
 
 /**
- * Same criteria as the archived evaluator seed.
  * Factual claims need a source URL. Creative answers with no factual claims can pass.
  */
 export const evaluatorCriteria =

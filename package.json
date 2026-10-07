@@ -10,6 +10,7 @@
   "packageManager": "pnpm@9.9.0",
   "scripts": {
     "start": "node --env-file=.env --import tsx src/index.ts",
+    "eval": "node --env-file=.env --import tsx src/evals/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

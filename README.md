@@ -19,7 +19,6 @@ Assumptions:
 
 Deliberately left out, on purpose, until a later phase:
 
-- An end-to-end eval harness over the whole graph (Phase 1). A nine-case evaluator-only script is archived as the seed.
 - Tool retries, timeouts, and a max-revision cap (Phase 2). The only bound today is `recursionLimit`.
 - Structured logs, token and cost accounting, model routing, and a semantic cache (Phases 3–4).
 - Retrieval, prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 5–8).
@@ -56,11 +55,17 @@ pnpm start -- "What time is it, and what is 144 divided by 12?"
 
 Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
-Evals: not runnable yet. Phase 1 will add `pnpm eval` to run the whole graph over a golden set and print a pass rate plus per-case failures. The seed script is in `archive/test-evaluator.mjs` and is not wired up.
+Evals (the whole graph, four golden questions, pass rate plus any failures):
+
+```bash
+pnpm eval
+```
+
+`pnpm eval` loads `.env` and runs `src/evals/run.ts`. Each case uses a fresh thread. A full run is several model calls and takes a couple of minutes.
 
 ## Key decisions
 
-**`sidekick-v2` is the canonical graph.** It is the only original script that both runs the verifier loop and uses the shared six-tool module. `sidekick.mjs` and `sidekick-recall.mjs` use the same loop but inline a smaller tool set. `sidekick-all-by-me.mjs` is a React agent with a browser tool and no evaluator, so it drops the thing this repo exists to show. Those scripts, plus the original `tools.mjs` and the eval seed, live in `archive/` and are not an entry point. Earlier tutorial files from the same folder (mini-graphs, a chat agent) were not Sidekick variants and were not copied.
+**`sidekick-v2` is the canonical graph.** It was the only original script that both ran the verifier loop and used the shared six-tool module. The other drafts inlined a smaller tool set, or dropped the evaluator for a browser agent. Those drafts were not ported. Earlier tutorial files from the same folder (mini-graphs, a chat agent) were not Sidekick variants and were not copied.
 
 **TypeScript, run with `tsx`.** The sources were plain `.mjs`. TypeScript is the project language so the graph state, tool args, and evaluator schema are checked. There is no compile step: `pnpm start` runs the sources directly. Extra packages beyond the runtime list are only `typescript`, `tsx`, and `@types/node`.
 
@@ -74,9 +79,18 @@ Evals: not runnable yet. Phase 1 will add `pnpm eval` to run the whole graph ove
 
 ## Evaluation
 
-Not measured yet.
+One run of `pnpm eval` on 7 Oct 2026: **4/4 passed**.
 
-The archived seed (`archive/test-evaluator.mjs`) scores the evaluator alone on nine hand-written cases: a correct sourced fact, unsourced or wrong claims, vague answers, and a haiku that should pass. It does not run the worker, the tools, or the revision loop. Phase 1 replaces it with an end-to-end harness. Until that lands, this README will not quote a pass rate.
+| Case | What had to be true |
+| --- | --- |
+| arithmetic | The answer contains 12. |
+| wikipedia | The answer mentions sandstone and a `wikipedia.org` URL. |
+| workspace file | The answer contains `hello`, and so does `workspace/note.txt`. |
+| haiku | The answer is non-empty and the in-graph evaluator accepted it. |
+
+Checks are on the final answer (and, for the file case, the file on disk). They do not re-grade the judge with a second model. The model can still skip a tool or phrase a right answer so a check misses it, so a later run can move. Failures print the case name, the reason, and the answer text.
+
+An earlier nine-case script scored the judge on canned answers and was not kept. This harness runs the whole graph.
 
 ## Known limitations and what is next
 
@@ -88,7 +102,7 @@ The archived seed (`archive/test-evaluator.mjs`) scores the evaluator alone on n
 - File tools return errors as strings instead of throwing, so the model can read the failure and continue. That is intentional for now.
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
 
-Next is Phase 1: run the whole graph on a golden set and report a pass rate plus the failing cases, in one command.
+Next is Phase 2: tool retries, timeouts, and a revision cap, plus one deliberate failure case in the eval set.
 
 ## Cost and latency
 
