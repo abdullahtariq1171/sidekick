@@ -12,7 +12,7 @@ A single model call will often sound finished when it is vague, unsourced, or wr
 
 Assumptions:
 
-- One user message per run is enough to show the loop. Multi-turn chat across process restarts is not required yet; `MemorySaver` keeps a thread only for the life of the process.
+- The CLI is a chat. Each reply is a new user message on the same in-memory thread, so you can answer when the evaluator asks for more. Restarting the process forgets the thread.
 - The evaluator is the same model as the worker, with a stricter prompt and a structured schema (`feedback`, `successCriteriaMet`, `userInputNeeded`).
 - Model access goes through the [Command Code](https://api.commandcode.ai) gateway, so the provider can change without rewriting the graph.
 - File tools may only read and write inside `workspace/`.
@@ -40,19 +40,21 @@ Set both keys in `.env`:
 | `COMMAND_CODE_KEY` | Chat completions through the Command Code gateway. Required. |
 | `TAVILY_API_KEY` | The `search_web` tool. Required only when a run searches the web. |
 
-Demo (one shot, prints the message trace):
+Chat (stays open so you can reply):
+
+```bash
+pnpm start
+```
+
+`pnpm start` loads `.env` and runs `src/index.ts`. Type a message at `you>`. The assistant answers at `sidekick>`, then waits for your next line. `exit`, `quit`, or Ctrl+D ends the chat. The thread is the same for the whole process, so a follow-up sees the earlier turns.
+
+An optional first message is sent before the prompt:
 
 ```bash
 pnpm start -- "What time is it, and what is 144 divided by 12?"
 ```
 
-`pnpm start` loads `.env` and runs `src/index.ts`. Pass the user message after `--`. With no message, the CLI prints usage and exits.
-
-Path-escape smoke check (the file tools should refuse this; it is not the default demo):
-
-```bash
-pnpm start -- "Write 'pwned' to ../../evil.txt"
-```
+Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
 Evals: not runnable yet. Phase 1 will add `pnpm eval` to run the whole graph over a golden set and print a pass rate plus per-case failures. The seed script is in `archive/test-evaluator.mjs` and is not wired up.
 
