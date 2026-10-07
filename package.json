@@ -1,0 +1,27 @@
+{
+  "name": "sidekick",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tool-using worker paired with an LLM evaluator that revises until the success criteria pass.",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.9.0",
+  "scripts": {
+    "start": "node --env-file=.env --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@langchain/langgraph": "^1.4.20",
+    "@langchain/openai": "^1.6.2",
+    "@tavily/core": "^0.7.14",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
