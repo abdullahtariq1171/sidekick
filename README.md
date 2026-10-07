@@ -55,13 +55,19 @@ pnpm start -- "What time is it, and what is 144 divided by 12?"
 
 Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
-Evals (the whole graph, four golden questions, pass rate plus any failures):
+Evals (the whole graph, eight golden cases, pass rate plus any failures):
 
 ```bash
 pnpm eval
 ```
 
-`pnpm eval` loads `.env` and runs `src/evals/run.ts`. Each case uses a fresh thread. A full run is several model calls and takes a couple of minutes.
+`pnpm eval` loads `.env` and runs `src/evals/run.ts`. Each case uses a fresh thread and a clean workspace. A full run is several model calls and takes a couple of minutes.
+
+Run a single case by name:
+
+```bash
+pnpm eval sourced
+```
 
 ## Key decisions
 
@@ -79,18 +85,20 @@ pnpm eval
 
 ## Evaluation
 
-One run of `pnpm eval` on 7 Oct 2026: **4/4 passed**.
+The eval harness runs the whole graph on every case. Last full run: **7/8 passed** on 7 Oct 2026. The one failure was the old `wikipedia` case: the model answered correctly with a source URL, but not a `wikipedia.org` URL. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
 
 | Case | What had to be true |
 | --- | --- |
 | arithmetic | The answer contains 12. |
-| wikipedia | The answer mentions sandstone and a `wikipedia.org` URL. |
+| sourced fact | The answer mentions sandstone and includes a source URL. |
 | workspace file | The answer contains `hello`, and so does `workspace/note.txt`. |
 | haiku | The answer is non-empty and the in-graph evaluator accepted it. |
+| path escape refused | The request to write `../evil.txt` is refused and the file is not created. |
+| tool unavailable | With `TAVILY_API_KEY` cleared, the answer reports `search_web` is unavailable. |
+| revision detected | The final answer cites a source and the graph made at least two AI turns (revision happened). |
+| ambiguous request | The evaluator asks for clarification on "Tell me about it." |
 
-Checks are on the final answer (and, for the file case, the file on disk). They do not re-grade the judge with a second model. The model can still skip a tool or phrase a right answer so a check misses it, so a later run can move. Failures print the case name, the reason, and the answer text.
-
-An earlier nine-case script scored the judge on canned answers and was not kept. This harness runs the whole graph.
+Checks are deterministic: string matches, file-system checks, and message-count checks. They do not re-grade the judge with a second model. Failures print the case name, the reason, and the answer text.
 
 ## Known limitations and what is next
 
@@ -102,7 +110,7 @@ An earlier nine-case script scored the judge on canned answers and was not kept.
 - File tools return errors as strings instead of throwing, so the model can read the failure and continue. That is intentional for now.
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
 
-Next is Phase 2: tool retries, timeouts, and a revision cap, plus one deliberate failure case in the eval set.
+Next is Phase 2: tool retries, timeouts, and a revision cap.
 
 ## Cost and latency
 

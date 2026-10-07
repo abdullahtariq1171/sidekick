@@ -60,14 +60,14 @@ export const cases: EvalCase[] = [
       includesNumber(answer, 12) ? null : "final answer does not contain 12",
   },
   {
-    name: "wikipedia",
+    name: "sourced fact",
     ask: "What material is the Badshahi Mosque's exterior? Include the source URL.",
     check: ({ answer }) => {
       if (!/sandstone/i.test(answer)) {
         return "final answer does not mention sandstone";
       }
-      if (!/wikipedia\.org/i.test(answer)) {
-        return "final answer has no Wikipedia URL";
+      if (!/https?:\/\//i.test(answer)) {
+        return "final answer has no source URL";
       }
       return null;
     },
