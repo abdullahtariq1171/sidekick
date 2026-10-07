@@ -134,7 +134,7 @@ export const cases: EvalCase[] = [
   },
   {
     name: "revision detected",
-    ask: "What material is the Badshahi Mosque's exterior? Include a Wikipedia source and keep it under 15 words.",
+    ask: "What material is the Badshahi Mosque's exterior? Answer in exactly 5 words and include a Wikipedia URL.",
     check: ({ answer, messages }) => {
       if (!/sandstone|marble|red/i.test(answer)) {
         return "final answer does not mention the exterior material";
@@ -142,8 +142,9 @@ export const cases: EvalCase[] = [
       if (!/wikipedia\.org/i.test(answer)) {
         return "final answer has no Wikipedia source URL";
       }
-      if (!hasFeedback(messages)) {
-        return "no evaluator feedback detected; first draft passed without revision";
+      const aiTurns = messages.filter((m) => m.getType() === "ai").length;
+      if (aiTurns < 2) {
+        return "first draft passed without revision; loop did not run";
       }
       return null;
     },
