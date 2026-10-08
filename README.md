@@ -48,7 +48,7 @@ Chat (stays open so you can reply):
 pnpm start
 ```
 
-`pnpm start` loads `.env` and runs `src/index.ts`. Type a message at `you>`. The assistant answers at `sidekick>`, then waits for your next line. `exit`, `quit`, or Ctrl+D ends the chat. The thread is the same for the whole process, so a follow-up sees the earlier turns.
+`pnpm start` loads `.env` and runs `src/index.ts`. Type a message at `you>`. The assistant answers at `sidekick>`, then waits for your next line. The answer streams token by token, and a live status line shows what the loop is doing (drafting, calling a tool, evaluating, revising). `exit`, `quit`, or Ctrl+D ends the chat. The thread is the same for the whole process, so a follow-up sees the earlier turns.
 
 An optional first message is sent before the prompt:
 
@@ -56,7 +56,7 @@ An optional first message is sent before the prompt:
 pnpm start -- "What time is it, and what is 144 divided by 12?"
 ```
 
-Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
+Tool calls and evaluator critiques print as they happen, so a revised answer shows each draft and the critique between them. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
 Output is colorized on a terminal (cyan `you>`, green `sidekick>`, dim tool calls, yellow critiques); set `NO_COLOR=1` to disable it.
 

@@ -31,80 +31,176 @@ function textOf(message: { content: unknown }): string {
     : JSON.stringify(message.content);
 }
 
-/** Animated only on a terminal. Cleared before the reply is printed. */
-function startSpinner(label: string): () => void {
-  if (!output.isTTY) return () => {};
+/** A single-line spinner whose label can change. No-op when not a terminal. */
+function createStatus(): { set: (label: string) => void; clear: () => void } {
+  if (!output.isTTY) return { set: () => {}, clear: () => {} };
 
   let frame = 0;
+  let label = "";
   const timer = setInterval(() => {
-    output.write(`\r${dim(`${spinnerFrames[frame]} ${label}`)}`);
+    output.write(`\r\x1b[2K${dim(`${spinnerFrames[frame]} ${label}`)}`);
     frame = (frame + 1) % spinnerFrames.length;
   }, 80);
   timer.unref();
 
-  return () => {
-    clearInterval(timer);
-    output.write("\r\x1b[2K");
+  return {
+    set(next: string) {
+      label = next;
+    },
+    clear() {
+      clearInterval(timer);
+      output.write("\r\x1b[2K");
+    },
   };
 }
 
+type StreamEvent = [string[], string, unknown];
+
+/** Multi-mode streams yield [namespace, mode, payload]; single-mode is [mode, payload]. */
+function normalize(event: unknown): StreamEvent {
+  if (Array.isArray(event) && event.length === 3 && typeof event[1] === "string") {
+    return event as StreamEvent;
+  }
+  const [mode, payload] = event as [string, unknown];
+  return [[], mode, payload];
+}
+
 async function respond(message: string): Promise<void> {
-  const stopSpinner = startSpinner("thinking...");
   resetCounters();
   const startedAt = Date.now();
-  let result: Awaited<ReturnType<typeof app.invoke>>;
+  const status = createStatus();
+  status.set("thinking…");
+
+  const config = {
+    ...thread,
+    runName: "sidekick.turn",
+    metadata: { thread: "sidekick" },
+    streamMode: ["messages", "tools", "updates"] as [
+      "messages",
+      "tools",
+      "updates",
+    ],
+  };
+
+  let toolCalls = 0;
+  let answerOpen = false;
+  let wroteAnswer = false;
+
+  const openAnswer = () => {
+    if (answerOpen) return;
+    status.clear();
+    output.write(`\n${boldGreen("sidekick>")} `);
+    answerOpen = true;
+  };
+
+  const closeAnswer = () => {
+    if (!answerOpen) return;
+    output.write("\n");
+    answerOpen = false;
+  };
+
   try {
-    result = await app.invoke(
+    const stream = await app.stream(
       { messages: [new HumanMessage(message)] },
-      { ...thread, runName: "sidekick.turn", metadata: { thread: "sidekick" } },
+      config,
     );
-  } finally {
-    stopSpinner();
-  }
 
-  let start = 0;
-  for (let i = result.messages.length - 1; i >= 0; i--) {
-    if (result.messages[i].getType() === "human") {
-      start = i + 1;
-      break;
-    }
-  }
+    for await (const raw of stream) {
+      const [, mode, payload] = normalize(raw);
 
-  const fresh = result.messages.slice(start);
-  for (const entry of fresh) {
-    const text = textOf(entry);
-    if (entry.getType() === "system" && text.startsWith("[Evaluator feedback]")) {
-      const critique = text.replace(/^\[Evaluator feedback\]:\s*/, "");
-      console.log(`${yellow("  ⚠ evaluator:")} ${critique}`);
-    }
-    if ("tool_calls" in entry && Array.isArray(entry.tool_calls)) {
-      for (const call of entry.tool_calls) {
-        console.log(
-          `${dim("  ↳")} ${magenta(call.name)}${dim(`(${JSON.stringify(call.args)})`)}`,
-        );
+      if (mode === "messages") {
+        const [chunk, metadata] = payload as [
+          { content: unknown },
+          Record<string, unknown>,
+        ];
+        if (metadata.langgraph_node !== "llm") continue;
+
+        const text = textOf(chunk);
+        if (text) {
+          openAnswer();
+          output.write(text);
+          wroteAnswer = true;
+        } else if (!answerOpen) {
+          status.set("drafting…");
+        }
+        continue;
+      }
+
+      if (mode === "tools") {
+        const event = payload as { event: string; name: string; input?: unknown };
+        if (event.event === "on_tool_start") {
+          toolCalls += 1;
+          status.clear();
+          console.log(
+            `${dim("  ↳")} ${magenta(event.name)}${dim(`(${JSON.stringify(event.input)})`)}`,
+          );
+          status.set(`${event.name}…`);
+        } else {
+          status.set("thinking…");
+        }
+        continue;
+      }
+
+      if (mode === "updates") {
+        const update = payload as Record<string, unknown>;
+
+        if ("revise" in update) {
+          closeAnswer();
+          const messages =
+            (update.revise as { messages?: { content: unknown }[] })?.messages ?? [];
+          for (const entry of messages) {
+            const text = textOf(entry);
+            if (text.startsWith("[Evaluator feedback]")) {
+              status.clear();
+              console.log(
+                `${yellow("  ⚠ evaluator:")} ${text.replace(/^\[Evaluator feedback\]:\s*/, "")}`,
+              );
+            }
+          }
+          status.set("revising…");
+        } else if ("evaluate" in update) {
+          status.set("evaluating…");
+        } else if ("tools" in update) {
+          status.set("thinking…");
+        }
       }
     }
+  } finally {
+    status.clear();
   }
 
-  let answer: (typeof fresh)[number] | undefined;
-  for (let i = fresh.length - 1; i >= 0; i--) {
-    if (fresh[i].getType() === "ai") {
-      answer = fresh[i];
-      break;
+  const state = (await app.getState(thread)).values as {
+    messages: { getType: () => string; content: unknown }[];
+    evaluation?: { successCriteriaMet?: boolean; userInputNeeded?: boolean } | null;
+    revisionCount?: number;
+  };
+
+  if (answerOpen) {
+    output.write("\n");
+  } else if (!wroteAnswer) {
+    // Nothing streamed (e.g. no token metadata); fall back to the last AI message.
+    let answer: (typeof state.messages)[number] | undefined;
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      if (state.messages[i].getType() === "ai") {
+        answer = state.messages[i];
+        break;
+      }
     }
+    console.log(
+      `\n${boldGreen("sidekick>")} ${answer ? textOf(answer) : "(no reply)"}`,
+    );
   }
-  console.log(
-    `\n${boldGreen("sidekick>")} ${answer ? textOf(answer) : "(no reply)"}`,
-  );
 
-  if (result.evaluation?.userInputNeeded) {
+  const evaluation = state.evaluation;
+  if (evaluation?.userInputNeeded) {
     console.log(yellow("The evaluator stopped because it needs more from you."));
   }
 
+  const revisions = state.revisionCount ?? 0;
   const hitRevisionCap =
-    !result.evaluation?.successCriteriaMet &&
-    !result.evaluation?.userInputNeeded &&
-    (result.revisionCount ?? 0) >= maxRevisions;
+    !evaluation?.successCriteriaMet &&
+    !evaluation?.userInputNeeded &&
+    revisions >= maxRevisions;
   if (hitRevisionCap) {
     console.log(
       yellow(
@@ -114,14 +210,6 @@ async function respond(message: string): Promise<void> {
   }
 
   const { retries, timeouts } = countersSnapshot();
-  const toolCalls = fresh.reduce((total, entry) => {
-    const calls =
-      "tool_calls" in entry && Array.isArray(entry.tool_calls)
-        ? entry.tool_calls.length
-        : 0;
-    return total + calls;
-  }, 0);
-
   const elapsed = Date.now() - startedAt;
   recordDuration(elapsed);
 
@@ -134,7 +222,6 @@ async function respond(message: string): Promise<void> {
         (usage.outputTokens / 1e6) * price.outputPerMTok
       : null;
   const median = p50Duration();
-  const revisions = result.revisionCount ?? 0;
 
   const parts = [
     `${revisions} revision${revisions === 1 ? "" : "s"}`,
@@ -176,7 +263,7 @@ try {
 } catch (error) {
   // Ctrl+D aborts the pending prompt. Anything else is a real failure.
   if (!isInputClosed(error)) {
-    console.error(`\n${formatError(error)}`);
+    console.error(`\n${red(formatError(error))}`);
     process.exitCode = 1;
   }
 } finally {
