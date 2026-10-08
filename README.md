@@ -86,7 +86,7 @@ pnpm eval sourced
 
 ## Evaluation
 
-The eval harness runs the whole graph on every case. Last full run: **7/8 passed** on 7 Oct 2026. The one failure was the old `wikipedia` case: the model answered correctly with a source URL, but not a `wikipedia.org` URL. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
+The eval harness runs the whole graph on every case. Last full run: **8/8 passed** on 8 Oct 2026, after the revision cap landed. An earlier run was 7/8: the old `wikipedia` case failed because the model cited a source URL that was not on `wikipedia.org`. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
 
 | Case | What had to be true |
 | --- | --- |
