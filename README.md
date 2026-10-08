@@ -19,7 +19,7 @@ Assumptions:
 
 Deliberately left out, on purpose, until a later phase:
 
-- Token and cost accounting, model routing, and a semantic cache (Phase 4).
+- Model routing and a semantic cache (later phase).
 - Retrieval, prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 5–8).
 
 ## How to run
@@ -31,12 +31,16 @@ pnpm install
 cp .env.example .env
 ```
 
-Set both keys in `.env`:
+Set these in `.env`:
 
 | Variable | Used for |
 | --- | --- |
 | `COMMAND_CODE_KEY` | Chat completions through the Command Code gateway. Required. |
 | `TAVILY_API_KEY` | The `search_web` tool. Required only when a run searches the web. |
+| `SIDEKICK_TOOL_TIMEOUT_MS` | Per-call timeout for network tools, in ms. Default `8000`. |
+| `SIDEKICK_TOOL_RETRIES` | Total attempts per network tool call. Default `3`. |
+| `SIDEKICK_PRICE_INPUT_PER_MTOK` | Override the input-token price (USD per 1M) for the cost estimate. |
+| `SIDEKICK_PRICE_OUTPUT_PER_MTOK` | Override the output-token price (USD per 1M) for the cost estimate. |
 
 Chat (stays open so you can reply):
 
@@ -84,7 +88,7 @@ Two layers, split by what each can see.
 Every turn also prints one summary line to stderr, whether or not events are on:
 
 ```
-  [trace] 1 revision(s) · 2 tool call(s) · 1 retry(ies) · 1840ms
+  [trace] 1 revision · 2 tools · 1 retry · 1840ms · 3,120 tok · $0.0021 · p50 1,600ms
 ```
 
 stdout stays the conversation (the answer and its tool/feedback lines); diagnostics go to stderr, so `pnpm start -- "..." 2>/dev/null` gives just the chat.
@@ -104,6 +108,8 @@ stdout stays the conversation (the answer and its tool/feedback lines); diagnost
 **The workspace prefix check includes the path separator.** `startsWith(workspace)` alone treats `workspace-evil` as inside `workspace`. The guard now requires the resolved path to be the workspace itself or to sit under `workspace/`. Broader injection defense for untrusted content is Phase 6.
 
 **The local event stream is deliberately narrow.** LangSmith already shows node spans, model calls, and tool spans, so emitting those ourselves would be a second copy. `src/log.ts` covers only what tracing cannot see — an in-tool retry or timeout — plus the counters behind the per-turn `[trace]` summary.
+
+**Usage is captured at the nodes, not from the transcript.** The worker's response carries `usage_metadata`, but the evaluator uses `withStructuredOutput`, which returns the parsed object and would drop the token counts; it is built with `includeRaw: true` so `raw.usage_metadata` is still counted. p50 is kept in memory and resets each process.
 
 **The revision cap is a routing decision, not a node side effect.** `evaluate` only judges; a separate `revise` node increments a counter and appends the feedback message; `routeAfterEvaluate` stops at `maxRevisions` using the count from *before* the decision. Keeping the increment out of `evaluate` means the count and the feedback message can never disagree: the loop either schedules a revision and counts it, or stops without stranding a critique.
 
@@ -134,11 +140,12 @@ Checks are deterministic: string matches, file-system checks, and message-count 
 - File tools return errors as strings instead of throwing, so the model can read the failure and continue. That is intentional for now.
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
 - Retries happen inside a tool body, so they do not appear in the LangSmith trace; they show up only in the local events and the `[trace]` summary.
+- Cost estimates come from a hand-maintained price table in `config.ts` and will drift; tokens are reported raw regardless.
 
-Next is Phase 4: token and cost accounting and p50 latency.
+Next is Phase 5: retrieval and prompt-injection defense for untrusted page and file text.
 
 ## Cost and latency
 
-Not measured yet.
+Measured per turn. The `[trace]` line reports tokens (input + output), a rough USD estimate, and the session p50 latency; `pnpm eval` prints the same as totals for the whole suite. Tokens and cost are omitted when the model reports no usage.
 
-Each run is at least two model calls (one worker draft, one evaluation) and grows by two more calls per revision, plus one call per tool-using turn. Phase 4 will record tokens, rough cost per request, and p50 latency. Until then, treat a short demo as a handful of `deepseek/deepseek-v4-flash` calls through the Command Code gateway, and do not budget from this README.
+Each run is at least two model calls (one worker draft, one evaluation) and grows by two more calls per revision, plus one call per tool-using turn, so the token count tracks the loop. Costs come from a small per-model price table in `config.ts`; the seeded values are placeholders for the Command Code gateway, so correct them for real budgeting or override them with `SIDEKICK_PRICE_INPUT_PER_MTOK` / `SIDEKICK_PRICE_OUTPUT_PER_MTOK`. Tokens are reported raw even when no price is known.

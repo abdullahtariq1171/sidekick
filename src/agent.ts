@@ -1,4 +1,4 @@
-import { SystemMessage } from "@langchain/core/messages";
+import { AIMessage, SystemMessage } from "@langchain/core/messages";
 import {
   Annotation,
   END,
@@ -16,6 +16,7 @@ import {
   maxRevisions,
   modelName,
 } from "./config.js";
+import { addUsage } from "./log.js";
 import { evaluatorCriteria, workerSystemPrompt } from "./prompts.js";
 import { tools } from "./tools.js";
 
@@ -43,7 +44,9 @@ const EvaluationSchema = z.object({
 
 export type Evaluation = z.infer<typeof EvaluationSchema>;
 
-const evaluatorModel = model.withStructuredOutput(EvaluationSchema);
+const evaluatorModel = model.withStructuredOutput(EvaluationSchema, {
+  includeRaw: true,
+});
 
 const SidekickState = Annotation.Root({
   ...MessagesAnnotation.spec,
@@ -88,15 +91,18 @@ const graph = new StateGraph(SidekickState)
       new SystemMessage(workerSystemPrompt),
       ...state.messages,
     ]);
+    addUsage(response.usage_metadata);
     return { messages: [response] };
   })
   .addNode("tools", new ToolNode(tools))
   .addNode("evaluate", async (state) => {
-    const evaluation = await evaluatorModel.invoke([
+    const { raw, parsed } = await evaluatorModel.invoke([
       new SystemMessage(evaluatorCriteria),
       ...state.messages,
     ]);
-    return { evaluation };
+    // includeRaw hands back the base message, which is an AIMessage here.
+    addUsage((raw as AIMessage).usage_metadata);
+    return { evaluation: parsed };
   })
   .addNode("revise", (state) => ({
     revisionCount: state.revisionCount + 1,

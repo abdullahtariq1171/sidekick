@@ -2,7 +2,13 @@ import { HumanMessage } from "@langchain/core/messages";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { app } from "../agent.js";
-import { recursionLimit, workspaceDir } from "../config.js";
+import { modelName, priceFor, recursionLimit, workspaceDir } from "../config.js";
+import {
+  formatCostUsd,
+  p50Duration,
+  recordDuration,
+  usageSnapshot,
+} from "../log.js";
 import { cases, type EvalCase } from "./cases.js";
 
 const filter = process.argv[2]?.trim().toLowerCase();
@@ -36,6 +42,7 @@ async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
   await cleanWorkspace();
   if (evalCase.setup) await evalCase.setup();
 
+  const startedAt = Date.now();
   try {
     const result = await app.invoke(
       { messages: [new HumanMessage(evalCase.ask)] },
@@ -66,6 +73,7 @@ async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
     console.log(`      run threw: ${message}`);
     return false;
   } finally {
+    recordDuration(Date.now() - startedAt);
     if (evalCase.teardown) await evalCase.teardown();
   }
 }
@@ -86,3 +94,21 @@ for (const [index, evalCase] of selected.entries()) {
 
 console.log(`\n${passed}/${selected.length} passed`);
 if (passed !== selected.length) process.exitCode = 1;
+
+const usage = usageSnapshot();
+const totalTokens = usage.inputTokens + usage.outputTokens;
+const price = priceFor(modelName);
+const costUsd =
+  price && usage.seen
+    ? (usage.inputTokens / 1e6) * price.inputPerMTok +
+      (usage.outputTokens / 1e6) * price.outputPerMTok
+    : null;
+const median = p50Duration();
+const totalParts = [
+  usage.seen
+    ? `${totalTokens.toLocaleString()} tok (${usage.inputTokens.toLocaleString()} in / ${usage.outputTokens.toLocaleString()} out)`
+    : null,
+  costUsd !== null ? `$${formatCostUsd(costUsd)}` : null,
+  median !== null ? `p50 ${(median / 1000).toFixed(1)}s` : null,
+].filter((part): part is string => part !== null);
+if (totalParts.length) console.log(`total: ${totalParts.join(" · ")}`);

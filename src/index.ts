@@ -3,8 +3,17 @@ import { stdin as input, stdout as output } from "node:process";
 
 const { HumanMessage } = await import("@langchain/core/messages");
 const { app } = await import("./agent.js");
-const { maxRevisions, recursionLimit } = await import("./config.js");
-const { countersSnapshot, resetCounters } = await import("./log.js");
+const { maxRevisions, modelName, priceFor, recursionLimit } = await import(
+  "./config.js"
+);
+const {
+  countersSnapshot,
+  formatCostUsd,
+  p50Duration,
+  recordDuration,
+  resetCounters,
+  usageSnapshot,
+} = await import("./log.js");
 
 const thread = {
   configurable: { thread_id: "sidekick" },
@@ -102,12 +111,30 @@ async function respond(message: string): Promise<void> {
         : 0;
     return total + calls;
   }, 0);
+
+  const elapsed = Date.now() - startedAt;
+  recordDuration(elapsed);
+
+  const usage = usageSnapshot();
+  const price = priceFor(modelName);
+  const totalTokens = usage.inputTokens + usage.outputTokens;
+  const costUsd =
+    price && usage.seen
+      ? (usage.inputTokens / 1e6) * price.inputPerMTok +
+        (usage.outputTokens / 1e6) * price.outputPerMTok
+      : null;
+  const median = p50Duration();
+  const revisions = result.revisionCount ?? 0;
+
   const parts = [
-    `${result.revisionCount ?? 0} revision(s)`,
-    `${toolCalls} tool call(s)`,
-    retries ? `${retries} retry(ies)` : null,
-    timeouts ? `${timeouts} timeout(s)` : null,
-    `${Date.now() - startedAt}ms`,
+    `${revisions} revision${revisions === 1 ? "" : "s"}`,
+    `${toolCalls} tool${toolCalls === 1 ? "" : "s"}`,
+    retries ? `${retries} retr${retries === 1 ? "y" : "ies"}` : null,
+    timeouts ? `${timeouts} timeout${timeouts === 1 ? "" : "s"}` : null,
+    `${elapsed}ms`,
+    usage.seen ? `${totalTokens.toLocaleString()} tok` : null,
+    costUsd !== null ? `$${formatCostUsd(costUsd)}` : null,
+    median !== null ? `p50 ${Math.round(median)}ms` : null,
   ].filter((part): part is string => part !== null);
   console.error(`  [trace] ${parts.join(" · ")}`);
 }
