@@ -14,6 +14,9 @@ const {
   resetCounters,
   usageSnapshot,
 } = await import("./log.js");
+const { boldGreen, cyan, dim, magenta, red, yellow } = await import(
+  "./style.js"
+);
 
 const thread = {
   configurable: { thread_id: "sidekick" },
@@ -34,7 +37,7 @@ function startSpinner(label: string): () => void {
 
   let frame = 0;
   const timer = setInterval(() => {
-    output.write(`\r${spinnerFrames[frame]} ${label}`);
+    output.write(`\r${dim(`${spinnerFrames[frame]} ${label}`)}`);
     frame = (frame + 1) % spinnerFrames.length;
   }, 80);
   timer.unref();
@@ -71,11 +74,14 @@ async function respond(message: string): Promise<void> {
   for (const entry of fresh) {
     const text = textOf(entry);
     if (entry.getType() === "system" && text.startsWith("[Evaluator feedback]")) {
-      console.log(`  ${text}`);
+      const critique = text.replace(/^\[Evaluator feedback\]:\s*/, "");
+      console.log(`${yellow("  ⚠ evaluator:")} ${critique}`);
     }
     if ("tool_calls" in entry && Array.isArray(entry.tool_calls)) {
       for (const call of entry.tool_calls) {
-        console.log(`  tool: ${call.name}(${JSON.stringify(call.args)})`);
+        console.log(
+          `${dim("  ↳")} ${magenta(call.name)}${dim(`(${JSON.stringify(call.args)})`)}`,
+        );
       }
     }
   }
@@ -87,10 +93,12 @@ async function respond(message: string): Promise<void> {
       break;
     }
   }
-  console.log(`\nsidekick> ${answer ? textOf(answer) : "(no reply)"}`);
+  console.log(
+    `\n${boldGreen("sidekick>")} ${answer ? textOf(answer) : "(no reply)"}`,
+  );
 
   if (result.evaluation?.userInputNeeded) {
-    console.log("The evaluator stopped because it needs more from you.");
+    console.log(yellow("The evaluator stopped because it needs more from you."));
   }
 
   const hitRevisionCap =
@@ -99,7 +107,9 @@ async function respond(message: string): Promise<void> {
     (result.revisionCount ?? 0) >= maxRevisions;
   if (hitRevisionCap) {
     console.log(
-      `Stopped at the revision cap (${maxRevisions}) without a clean pass.`,
+      yellow(
+        `Stopped at the revision cap (${maxRevisions}) without a clean pass.`,
+      ),
     );
   }
 
@@ -136,29 +146,31 @@ async function respond(message: string): Promise<void> {
     costUsd !== null ? `$${formatCostUsd(costUsd)}` : null,
     median !== null ? `p50 ${Math.round(median)}ms` : null,
   ].filter((part): part is string => part !== null);
-  console.error(`  [trace] ${parts.join(" · ")}`);
+  console.error(dim(`  [trace] ${parts.join(" · ")}`));
 }
 
 const rl = createInterface({ input, output });
 
-console.log('Sidekick. Same thread until you quit. "exit" or Ctrl+D ends the chat.\n');
+console.log(
+  `${dim('Sidekick. Same thread until you quit. "exit" or Ctrl+D ends the chat.')}\n`,
+);
 
 const initial = process.argv.slice(2).join(" ").trim();
 if (initial) {
-  console.log(`you> ${initial}`);
+  console.log(`${cyan("you>")} ${initial}`);
   await respond(initial);
 }
 
 try {
   while (true) {
-    const line = await rl.question("you> ");
+    const line = await rl.question(cyan("you> "));
     const text = line.trim();
     if (!text) continue;
     if (text === "exit" || text === "quit") break;
     try {
       await respond(text);
     } catch (error) {
-      console.error(`\n${formatError(error)}`);
+      console.error(`\n${red(formatError(error))}`);
     }
   }
 } catch (error) {

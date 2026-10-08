@@ -58,6 +58,8 @@ pnpm start -- "What time is it, and what is 144 divided by 12?"
 
 Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
+Output is colorized on a terminal (cyan `you>`, green `sidekick>`, dim tool calls, yellow critiques); set `NO_COLOR=1` to disable it.
+
 `documents/` is a read-only corpus the `search_documents` tool retrieves from; `workspace/` is the agent's writable scratch.
 
 Evals (the whole graph, ten golden cases, pass rate plus any failures):

@@ -9,6 +9,7 @@ import {
   recordDuration,
   usageSnapshot,
 } from "../log.js";
+import { dim, green, red } from "../style.js";
 import { cases, type EvalCase } from "./cases.js";
 
 const filter = process.argv[2]?.trim().toLowerCase();
@@ -37,7 +38,7 @@ async function cleanWorkspace(): Promise<void> {
 }
 
 async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
-  console.log(`\nrunning ${evalCase.name}...`);
+  console.log(`\n${dim(`running ${evalCase.name}...`)}`);
 
   await cleanWorkspace();
   if (evalCase.setup) await evalCase.setup();
@@ -59,17 +60,17 @@ async function runCase(evalCase: EvalCase, index: number): Promise<boolean> {
 
     if (reason) {
       const preview = answer.replaceAll("\n", " ").slice(0, 240);
-      console.log(`FAIL  ${evalCase.name}`);
+      console.log(`${red("FAIL")}  ${evalCase.name}`);
       console.log(`      ${reason}`);
       console.log(`      answer: ${preview || "(empty)"}`);
       return false;
     }
 
-    console.log(`PASS  ${evalCase.name}`);
+    console.log(`${green("PASS")}  ${evalCase.name}`);
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log(`FAIL  ${evalCase.name}`);
+    console.log(`${red("FAIL")}  ${evalCase.name}`);
     console.log(`      run threw: ${message}`);
     return false;
   } finally {
@@ -111,4 +112,4 @@ const totalParts = [
   costUsd !== null ? `$${formatCostUsd(costUsd)}` : null,
   median !== null ? `p50 ${(median / 1000).toFixed(1)}s` : null,
 ].filter((part): part is string => part !== null);
-if (totalParts.length) console.log(`total: ${totalParts.join(" · ")}`);
+if (totalParts.length) console.log(dim(`total: ${totalParts.join(" · ")}`));
