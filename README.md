@@ -6,6 +6,29 @@ Plain tutorial agents are `question → tool calls → answer`. Sidekick adds `a
 
 This is a reference implementation of the worker-plus-verifier pattern, written to be read. It is not a product and not a research claim.
 
+## What this demonstrates
+
+- **A verifier loop, not a single call.** A second model judges each draft and forces revisions until the criteria pass or the cap is reached.
+- **Evaluation as a first-class artifact.** Ten deterministic golden cases (`pnpm eval`), checked by string/file predicates — no LLM-as-judge, so runs are reproducible.
+- **Reliability.** Network tools retry with backoff and time out; a revision cap bounds the loop instead of leaning on the graph recursion limit.
+- **Observability and cost.** Per-turn tokens, USD estimate, latency, retries, and timeouts, plus optional LangSmith tracing.
+- **Safety.** Untrusted web and file text is wrapped and flagged, with an eval case that proves an injected instruction is ignored.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  START([user message]) --> llm["llm (worker draft)"]
+  llm -- "has tool_calls" --> tools["tools (ToolNode)"]
+  tools --> llm
+  llm -- "no tool_calls" --> evaluate["evaluate (LLM judge)"]
+  evaluate -- "met / needs user / cap hit" --> END([answer])
+  evaluate -- "not met" --> revise["revise (+1, append critique)"]
+  revise --> llm
+```
+
+Tools: `get_current_time`, `calculate`, `search_web`, `wikipedia_search`, `search_documents`, `read_file`, `write_file`.
+
 ## Problem and scope
 
 A single model call will often sound finished when it is vague, unsourced, or wrong. Sidekick separates drafting from judging: the worker may call tools, then a second structured call decides whether the latest answer actually meets the request. On failure, the critique is appended as a system message and the worker tries again. The loop ends when the criteria are met, when the evaluator decides it needs the user, or when the revision cap stops it.
@@ -17,10 +40,10 @@ Assumptions:
 - Model access goes through the [Command Code](https://api.commandcode.ai) gateway, so the provider can change without rewriting the graph.
 - File tools may only read and write inside `workspace/`.
 
-Deliberately left out, on purpose, until a later phase:
+Deliberately out of scope:
 
-- Model routing and a semantic cache (later phase).
-- A UI and a public release (Phases 7–8).
+- A web UI. The terminal CLI is the interface; the loop, evals, and safety are the point.
+- Model routing and a semantic cache.
 
 ## How to run
 
@@ -159,7 +182,7 @@ Checks are deterministic: string matches, file-system checks, and message-count 
 - Cost estimates come from a hand-maintained price table in `config.ts` and will drift; tokens are reported raw regardless.
 - Retrieval is lexical (TF-IDF): it matches terms, not meaning, and misses paraphrases. Embeddings would be a later swap.
 
-Next is Phase 7: a UI and a public release.
+Possible next steps: model routing, a semantic cache, and embeddings as a drop-in swap for the lexical retriever.
 
 ## Cost and latency
 

@@ -2,6 +2,7 @@
   "name": "sidekick",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "A tool-using worker paired with an LLM evaluator that revises until the success criteria pass.",
   "engines": {
