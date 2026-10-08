@@ -3,7 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 const { HumanMessage } = await import("@langchain/core/messages");
 const { app } = await import("./agent.js");
-const { recursionLimit } = await import("./config.js");
+const { maxRevisions, recursionLimit } = await import("./config.js");
 
 const thread = {
   configurable: { thread_id: "sidekick" },
@@ -79,6 +79,16 @@ async function respond(message: string): Promise<void> {
 
   if (result.evaluation?.userInputNeeded) {
     console.log("The evaluator stopped because it needs more from you.");
+  }
+
+  const hitRevisionCap =
+    !result.evaluation?.successCriteriaMet &&
+    !result.evaluation?.userInputNeeded &&
+    (result.revisionCount ?? 0) >= maxRevisions;
+  if (hitRevisionCap) {
+    console.log(
+      `Stopped at the revision cap (${maxRevisions}) without a clean pass.`,
+    );
   }
 }
 

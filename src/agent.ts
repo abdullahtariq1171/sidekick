@@ -13,6 +13,7 @@ import { z } from "zod";
 import {
   commandCodeBaseURL,
   commandCodeKey,
+  maxRevisions,
   modelName,
 } from "./config.js";
 import { evaluatorCriteria, workerSystemPrompt } from "./prompts.js";
@@ -50,6 +51,10 @@ const SidekickState = Annotation.Root({
     reducer: (_prev, update) => update,
     default: () => null,
   }),
+  revisionCount: Annotation<number>({
+    reducer: (_prev, update) => update,
+    default: () => 0,
+  }),
 });
 
 type GraphState = typeof SidekickState.State;
@@ -63,7 +68,7 @@ function routeAfterLlm(state: GraphState): "tools" | "evaluate" {
   return toolCalls.length > 0 ? "tools" : "evaluate";
 }
 
-function routeAfterEvaluate(state: GraphState): typeof END | "llm" {
+function routeAfterEvaluate(state: GraphState): typeof END | "revise" {
   const evaluation = state.evaluation;
   if (
     evaluation?.successCriteriaMet ||
@@ -71,7 +76,10 @@ function routeAfterEvaluate(state: GraphState): typeof END | "llm" {
   ) {
     return END;
   }
-  return "llm";
+  if (state.revisionCount >= maxRevisions) {
+    return END;
+  }
+  return "revise";
 }
 
 const graph = new StateGraph(SidekickState)
@@ -88,17 +96,16 @@ const graph = new StateGraph(SidekickState)
       new SystemMessage(evaluatorCriteria),
       ...state.messages,
     ]);
-
-    const needsRevision =
-      !evaluation.successCriteriaMet && !evaluation.userInputNeeded;
-
-    return {
-      evaluation,
-      messages: needsRevision
-        ? [new SystemMessage(`[Evaluator feedback]: ${evaluation.feedback}`)]
-        : [],
-    };
+    return { evaluation };
   })
+  .addNode("revise", (state) => ({
+    revisionCount: state.revisionCount + 1,
+    messages: [
+      new SystemMessage(
+        `[Evaluator feedback]: ${state.evaluation?.feedback ?? ""}`,
+      ),
+    ],
+  }))
   .addEdge(START, "llm")
   .addConditionalEdges("llm", routeAfterLlm, {
     tools: "tools",
@@ -106,9 +113,10 @@ const graph = new StateGraph(SidekickState)
   })
   .addEdge("tools", "llm")
   .addConditionalEdges("evaluate", routeAfterEvaluate, {
-    llm: "llm",
+    revise: "revise",
     [END]: END,
-  });
+  })
+  .addEdge("revise", "llm");
 
 const memory = new MemorySaver();
 

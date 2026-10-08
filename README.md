@@ -1,6 +1,6 @@
 # Sidekick
 
-A Node agent that does not stop at the first answer. A tool-using worker drafts a response, an LLM evaluator judges it against success criteria, and the worker revises until the evaluator accepts it or asks the user for input.
+A Node agent that does not stop at the first answer. A tool-using worker drafts a response, an LLM evaluator judges it against success criteria, and the worker revises until the evaluator accepts it, asks the user for input, or the revision cap is reached.
 
 Plain tutorial agents are `question → tool calls → answer`. Sidekick adds `answer → critique → revise → loop`. That verification loop is the project. The tools and the checkpointer are there so the loop has something real to judge.
 
@@ -8,7 +8,7 @@ This is a reference implementation of the worker-plus-verifier pattern, written 
 
 ## Problem and scope
 
-A single model call will often sound finished when it is vague, unsourced, or wrong. Sidekick separates drafting from judging: the worker may call tools, then a second structured call decides whether the latest answer actually meets the request. On failure, the critique is appended as a system message and the worker tries again. The loop ends when the criteria are met, when the evaluator decides it needs the user, or when LangGraph's recursion limit stops it.
+A single model call will often sound finished when it is vague, unsourced, or wrong. Sidekick separates drafting from judging: the worker may call tools, then a second structured call decides whether the latest answer actually meets the request. On failure, the critique is appended as a system message and the worker tries again. The loop ends when the criteria are met, when the evaluator decides it needs the user, or when the revision cap stops it.
 
 Assumptions:
 
@@ -19,7 +19,6 @@ Assumptions:
 
 Deliberately left out, on purpose, until a later phase:
 
-- Tool retries, timeouts, and a max-revision cap (Phase 2). The only bound today is `recursionLimit`.
 - Structured logs, token and cost accounting, model routing, and a semantic cache (Phases 3–4).
 - Retrieval, prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 5–8).
 
@@ -83,6 +82,8 @@ pnpm eval sourced
 
 **The workspace prefix check includes the path separator.** `startsWith(workspace)` alone treats `workspace-evil` as inside `workspace`. The guard now requires the resolved path to be the workspace itself or to sit under `workspace/`. Broader injection defense for untrusted content is Phase 6.
 
+**The revision cap is a routing decision, not a node side effect.** `evaluate` only judges; a separate `revise` node increments a counter and appends the feedback message; `routeAfterEvaluate` stops at `maxRevisions` using the count from *before* the decision. Keeping the increment out of `evaluate` means the count and the feedback message can never disagree: the loop either schedules a revision and counts it, or stops without stranding a critique.
+
 ## Evaluation
 
 The eval harness runs the whole graph on every case. Last full run: **7/8 passed** on 7 Oct 2026. The one failure was the old `wikipedia` case: the model answered correctly with a source URL, but not a `wikipedia.org` URL. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
@@ -103,14 +104,14 @@ Checks are deterministic: string matches, file-system checks, and message-count 
 ## Known limitations and what is next
 
 - The evaluator can accept a bad answer or reject a good one. Nothing in this phase measures that.
-- `recursionLimit` (10) is the only loop bound. A stubborn evaluator can burn the whole budget. A revision cap is Phase 2.
-- Tool calls have no timeout, retry, or backoff. A hung search hangs the run.
+- Two bounds stop the loop: a revision cap (`maxRevisions`, 3 worker redrafts) and `recursionLimit` (20) as a graph-level safety net. The cap ends the run cleanly; `recursionLimit` throws.
+- Network tools (`search_web`, `wikipedia_search`) retry with backoff and time out. Local tools do neither: their failures (bad args, a missing file, a refused path) are not transient, so a retry would just repeat the same failure slower.
 - `MemorySaver` is in-memory. Restarting the process forgets the thread.
 - The worker and the evaluator are the same model. A weak draft and a weak judge fail together.
 - File tools return errors as strings instead of throwing, so the model can read the failure and continue. That is intentional for now.
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
 
-Next is Phase 2: tool retries, timeouts, and a revision cap.
+Next is Phase 3: structured logs and token and cost accounting.
 
 ## Cost and latency
 
