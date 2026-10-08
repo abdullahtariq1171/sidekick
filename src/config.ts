@@ -26,3 +26,9 @@ export const commandCodeBaseURL = "https://api.commandcode.ai/provider/v1";
 export const recursionLimit = 10;
 
 export const workspaceDir = path.resolve(rootDir, "workspace");
+
+/** Applies only to network tools (search_web, wikipedia_search). */
+export const toolTimeoutMs = 8000;
+
+/** Total attempts per network tool call, including the first. */
+export const toolRetryAttempts = 3;

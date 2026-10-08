@@ -3,7 +3,8 @@ import { tavily } from "@tavily/core";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { workspaceDir } from "./config.js";
+import { toolRetryAttempts, toolTimeoutMs, workspaceDir } from "./config.js";
+import { withRetry, withTimeout } from "./retry.js";
 
 await mkdir(workspaceDir, { recursive: true });
 
@@ -53,18 +54,27 @@ const searchWebTool = tool(
     }
 
     const client = tavily({ apiKey });
-    const rawResults = await client.search(query);
 
-    if (rawResults?.results?.length) {
-      return rawResults.results
-        .map(
-          (r, i) =>
-            `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.content.slice(0, 500)}`,
-        )
-        .join("\n\n");
+    try {
+      const rawResults = await withRetry(
+        () => withTimeout(toolTimeoutMs, "search_web", () => client.search(query)),
+        { attempts: toolRetryAttempts },
+      );
+
+      if (rawResults?.results?.length) {
+        return rawResults.results
+          .map(
+            (r, i) =>
+              `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.content.slice(0, 500)}`,
+          )
+          .join("\n\n");
+      }
+
+      return "No results found";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `search_web failed after ${toolRetryAttempts} attempts: ${message}`;
     }
-
-    return "No results found";
   },
   {
     name: "search_web",
@@ -77,15 +87,26 @@ const searchWebTool = tool(
 
 const wikipediaSearchTool = tool(
   async ({ topic }) => {
-    const response = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`,
-    );
+    try {
+      const response = await withRetry(
+        () =>
+          withTimeout(toolTimeoutMs, "wikipedia_search", (signal) =>
+            fetch(
+              `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`,
+              { signal },
+            ),
+          ),
+        { attempts: toolRetryAttempts },
+      );
 
-    if (!response.ok) return `No Wikipedia page found for ${topic}`;
+      if (!response.ok) return `No Wikipedia page found for ${topic}`;
 
-    const data = (await response.json()) as { title?: string; extract?: string };
-
-    return `Title: ${data.title ?? topic} \n\n ${data.extract ?? ""}`;
+      const data = (await response.json()) as { title?: string; extract?: string };
+      return `Title: ${data.title ?? topic} \n\n ${data.extract ?? ""}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `wikipedia_search failed after ${toolRetryAttempts} attempts: ${message}`;
+    }
   },
   {
     name: "wikipedia_search",
