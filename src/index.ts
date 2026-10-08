@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 const { HumanMessage } = await import("@langchain/core/messages");
 const { app } = await import("./agent.js");
 const { maxRevisions, recursionLimit } = await import("./config.js");
+const { countersSnapshot, resetCounters } = await import("./log.js");
 
 const thread = {
   configurable: { thread_id: "sidekick" },
@@ -37,11 +38,13 @@ function startSpinner(label: string): () => void {
 
 async function respond(message: string): Promise<void> {
   const stopSpinner = startSpinner("thinking...");
+  resetCounters();
+  const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof app.invoke>>;
   try {
     result = await app.invoke(
       { messages: [new HumanMessage(message)] },
-      thread,
+      { ...thread, runName: "sidekick.turn", metadata: { thread: "sidekick" } },
     );
   } finally {
     stopSpinner();
@@ -90,6 +93,23 @@ async function respond(message: string): Promise<void> {
       `Stopped at the revision cap (${maxRevisions}) without a clean pass.`,
     );
   }
+
+  const { retries, timeouts } = countersSnapshot();
+  const toolCalls = fresh.reduce((total, entry) => {
+    const calls =
+      "tool_calls" in entry && Array.isArray(entry.tool_calls)
+        ? entry.tool_calls.length
+        : 0;
+    return total + calls;
+  }, 0);
+  const parts = [
+    `${result.revisionCount ?? 0} revision(s)`,
+    `${toolCalls} tool call(s)`,
+    retries ? `${retries} retry(ies)` : null,
+    timeouts ? `${timeouts} timeout(s)` : null,
+    `${Date.now() - startedAt}ms`,
+  ].filter((part): part is string => part !== null);
+  console.error(`  [trace] ${parts.join(" · ")}`);
 }
 
 const rl = createInterface({ input, output });

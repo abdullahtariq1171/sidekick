@@ -58,7 +58,7 @@ const searchWebTool = tool(
     try {
       const rawResults = await withRetry(
         () => withTimeout(toolTimeoutMs, "search_web", () => client.search(query)),
-        { attempts: toolRetryAttempts },
+        { attempts: toolRetryAttempts, label: "search_web" },
       );
 
       if (rawResults?.results?.length) {
@@ -96,7 +96,7 @@ const wikipediaSearchTool = tool(
               { signal },
             ),
           ),
-        { attempts: toolRetryAttempts },
+        { attempts: toolRetryAttempts, label: "wikipedia_search" },
       );
 
       if (!response.ok) return `No Wikipedia page found for ${topic}`;

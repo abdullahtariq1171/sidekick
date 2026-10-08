@@ -5,6 +5,8 @@
  * so retrying would just repeat the same failure slower.
  */
 
+import { logEvent } from "./log.js";
+
 export class ToolTimeoutError extends Error {
   constructor(label: string, ms: number) {
     super(`${label} timed out after ${ms}ms`);
@@ -22,6 +24,7 @@ export function withTimeout<T>(
 
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
+      logEvent({ type: "tool.timeout", label, ms });
       controller.abort();
       reject(new ToolTimeoutError(label, ms));
     }, ms);
@@ -45,12 +48,14 @@ export type RetryOptions = {
   attempts: number;
   /** Delay before the second attempt. Doubles each retry after that. Default 300ms. */
   baseDelayMs?: number;
+  /** Name used in retry logs. Defaults to "tool". */
+  label?: string;
 };
 
 /** Retries `attemptFn` with exponential backoff. Re-throws the last error. */
 export async function withRetry<T>(
   attemptFn: () => Promise<T>,
-  { attempts, baseDelayMs = 300 }: RetryOptions,
+  { attempts, baseDelayMs = 300, label = "tool" }: RetryOptions,
 ): Promise<T> {
   let lastError: unknown;
 
@@ -60,11 +65,24 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error;
       if (attempt === attempts) break;
-      await sleep(baseDelayMs * 2 ** (attempt - 1));
+      const delayMs = baseDelayMs * 2 ** (attempt - 1);
+      logEvent({
+        type: "tool.retry",
+        label,
+        attempt: attempt + 1,
+        maxAttempts: attempts,
+        delayMs,
+        error: messageOf(error),
+      });
+      await sleep(delayMs);
     }
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function sleep(ms: number): Promise<void> {

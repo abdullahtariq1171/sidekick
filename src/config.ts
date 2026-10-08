@@ -16,6 +16,16 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  }
+  return value;
+}
+
 /** Chat completions through the Command Code gateway. */
 export const commandCodeKey = requiredEnv("COMMAND_CODE_KEY");
 
@@ -31,7 +41,7 @@ export const maxRevisions = 3;
 export const workspaceDir = path.resolve(rootDir, "workspace");
 
 /** Applies only to network tools (search_web, wikipedia_search). */
-export const toolTimeoutMs = 8000;
+export const toolTimeoutMs = positiveIntEnv("SIDEKICK_TOOL_TIMEOUT_MS", 8000);
 
 /** Total attempts per network tool call, including the first. */
-export const toolRetryAttempts = 3;
+export const toolRetryAttempts = positiveIntEnv("SIDEKICK_TOOL_RETRIES", 3);

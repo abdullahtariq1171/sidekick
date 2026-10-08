@@ -19,7 +19,7 @@ Assumptions:
 
 Deliberately left out, on purpose, until a later phase:
 
-- Structured logs, token and cost accounting, model routing, and a semantic cache (Phases 3–4).
+- Token and cost accounting, model routing, and a semantic cache (Phase 4).
 - Retrieval, prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 5–8).
 
 ## How to run
@@ -68,6 +68,27 @@ Run a single case by name:
 pnpm eval sourced
 ```
 
+## Observability
+
+Two layers, split by what each can see.
+
+**LangSmith (hosted traces).** Off by default. Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `.env` (with `LANGSMITH_PROJECT`; `LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`). The flag must be the literal string `true`. Every run then appears as a trace: one span per graph node, tool spans, and model calls with latency and token counts. The CLI tags each turn with `runName: "sidekick.turn"` and a `thread` metadata field.
+
+**Local events.** LangSmith cannot see our in-tool retries — a `withRetry` loop is a single tool span. So `SIDEKICK_LOG=events` writes those events as JSON lines to stderr:
+
+```json
+{"ts":"2026-10-08T08:03:17.230Z","type":"tool.timeout","label":"search_web","ms":8000}
+{"ts":"2026-10-08T08:03:17.231Z","type":"tool.retry","label":"search_web","attempt":2,"maxAttempts":3,"delayMs":300,"error":"search_web timed out after 8000ms"}
+```
+
+Every turn also prints one summary line to stderr, whether or not events are on:
+
+```
+  [trace] 1 revision(s) · 2 tool call(s) · 1 retry(ies) · 1840ms
+```
+
+stdout stays the conversation (the answer and its tool/feedback lines); diagnostics go to stderr, so `pnpm start -- "..." 2>/dev/null` gives just the chat.
+
 ## Key decisions
 
 **`sidekick-v2` is the canonical graph.** It was the only original script that both ran the verifier loop and used the shared six-tool module. The other drafts inlined a smaller tool set, or dropped the evaluator for a browser agent. Those drafts were not ported. Earlier tutorial files from the same folder (mini-graphs, a chat agent) were not Sidekick variants and were not copied.
@@ -81,6 +102,8 @@ pnpm eval sourced
 **Tool names are `verb_noun`.** The Wikipedia tool was `wikipedia_search_tool` while the others were `read_file` and `search_web`. It is now `wikipedia_search`.
 
 **The workspace prefix check includes the path separator.** `startsWith(workspace)` alone treats `workspace-evil` as inside `workspace`. The guard now requires the resolved path to be the workspace itself or to sit under `workspace/`. Broader injection defense for untrusted content is Phase 6.
+
+**The local event stream is deliberately narrow.** LangSmith already shows node spans, model calls, and tool spans, so emitting those ourselves would be a second copy. `src/log.ts` covers only what tracing cannot see — an in-tool retry or timeout — plus the counters behind the per-turn `[trace]` summary.
 
 **The revision cap is a routing decision, not a node side effect.** `evaluate` only judges; a separate `revise` node increments a counter and appends the feedback message; `routeAfterEvaluate` stops at `maxRevisions` using the count from *before* the decision. Keeping the increment out of `evaluate` means the count and the feedback message can never disagree: the loop either schedules a revision and counts it, or stops without stranding a critique.
 
@@ -110,8 +133,9 @@ Checks are deterministic: string matches, file-system checks, and message-count 
 - The worker and the evaluator are the same model. A weak draft and a weak judge fail together.
 - File tools return errors as strings instead of throwing, so the model can read the failure and continue. That is intentional for now.
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
+- Retries happen inside a tool body, so they do not appear in the LangSmith trace; they show up only in the local events and the `[trace]` summary.
 
-Next is Phase 3: structured logs and token and cost accounting.
+Next is Phase 4: token and cost accounting and p50 latency.
 
 ## Cost and latency
 
