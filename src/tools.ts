@@ -11,6 +11,7 @@ import {
 } from "./config.js";
 import { buildIndex } from "./retrieval.js";
 import { withRetry, withTimeout } from "./retry.js";
+import { wrapUntrusted } from "./untrusted.js";
 
 await mkdir(workspaceDir, { recursive: true });
 
@@ -70,12 +71,13 @@ const searchWebTool = tool(
       );
 
       if (rawResults?.results?.length) {
-        return rawResults.results
+        const formatted = rawResults.results
           .map(
             (r, i) =>
               `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.content.slice(0, 500)}`,
           )
           .join("\n\n");
+        return wrapUntrusted("search_web", formatted);
       }
 
       return "No results found";
@@ -110,7 +112,10 @@ const wikipediaSearchTool = tool(
       if (!response.ok) return `No Wikipedia page found for ${topic}`;
 
       const data = (await response.json()) as { title?: string; extract?: string };
-      return `Title: ${data.title ?? topic} \n\n ${data.extract ?? ""}`;
+      return wrapUntrusted(
+        "wikipedia_search",
+        `Title: ${data.title ?? topic} \n\n ${data.extract ?? ""}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `wikipedia_search failed after ${toolRetryAttempts} attempts: ${message}`;
@@ -130,7 +135,10 @@ const searchDocumentsTool = tool(
     const hits = documentIndex.search(query, 3);
     if (!hits.length) return "No matching documents in documents/.";
 
-    return hits.map((hit) => `[${hit.source}]\n${hit.text}`).join("\n\n");
+    const formatted = hits
+      .map((hit) => `[${hit.source}]\n${hit.text}`)
+      .join("\n\n");
+    return wrapUntrusted("documents", formatted);
   },
   {
     name: "search_documents",
@@ -160,8 +168,9 @@ const readFileTool = tool(
     if (!resolved) return "Refused: filePath is outside workspace";
 
     try {
-      const fileContent = await readFile(resolved, "utf-8");
-      return fileContent.slice(0, 4000) || "File is empty.";
+      const fileContent = (await readFile(resolved, "utf-8")).slice(0, 4000);
+      if (!fileContent) return "File is empty.";
+      return wrapUntrusted("read_file", fileContent);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return `Couldn't read the file: ${filePath}: ${message}`;
