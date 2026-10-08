@@ -3,10 +3,18 @@ import { tavily } from "@tavily/core";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { toolRetryAttempts, toolTimeoutMs, workspaceDir } from "./config.js";
+import {
+  documentsDir,
+  toolRetryAttempts,
+  toolTimeoutMs,
+  workspaceDir,
+} from "./config.js";
+import { buildIndex } from "./retrieval.js";
 import { withRetry, withTimeout } from "./retry.js";
 
 await mkdir(workspaceDir, { recursive: true });
+
+const documentIndex = await buildIndex(documentsDir);
 
 const getCurrentTimeTool = tool(
   () => {
@@ -117,6 +125,23 @@ const wikipediaSearchTool = tool(
   },
 );
 
+const searchDocumentsTool = tool(
+  ({ query }) => {
+    const hits = documentIndex.search(query, 3);
+    if (!hits.length) return "No matching documents in documents/.";
+
+    return hits.map((hit) => `[${hit.source}]\n${hit.text}`).join("\n\n");
+  },
+  {
+    name: "search_documents",
+    description:
+      "Search the project's read-only documents/ corpus for relevant text (a fixed corpus, not workspace files)",
+    schema: z.object({
+      query: z.string().describe("What to look up in the documents"),
+    }),
+  },
+);
+
 /** Resolved path inside the workspace, or null when the path escapes it. */
 function resolveInsideWorkspace(filePath: string): string | null {
   const resolved = path.resolve(workspaceDir, filePath);
@@ -180,6 +205,7 @@ export const tools = [
   calculateTool,
   searchWebTool,
   wikipediaSearchTool,
+  searchDocumentsTool,
   readFileTool,
   writeFileTool,
 ];

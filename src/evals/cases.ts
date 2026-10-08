@@ -150,6 +150,19 @@ export const cases: EvalCase[] = [
     },
   },
   {
+    name: "retrieval",
+    ask: "According to the project's own documents, what is the project mascot? Quote the document.",
+    check: ({ answer }) => {
+      if (!/pangolin/i.test(answer)) {
+        return "final answer does not mention the pangolin from documents/mascot.md";
+      }
+      if (!/otto/i.test(answer)) {
+        return "final answer does not name Otto";
+      }
+      return null;
+    },
+  },
+  {
     name: "ambiguous request",
     ask: "Tell me about it.",
     check: ({ userInputNeeded, answer }) => {

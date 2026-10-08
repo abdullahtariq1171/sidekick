@@ -20,7 +20,7 @@ Assumptions:
 Deliberately left out, on purpose, until a later phase:
 
 - Model routing and a semantic cache (later phase).
-- Retrieval, prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 5–8).
+- Prompt-injection defense for untrusted page and file text, a UI, and a public release (Phases 6–8).
 
 ## How to run
 
@@ -58,7 +58,9 @@ pnpm start -- "What time is it, and what is 144 divided by 12?"
 
 Tool calls and evaluator critiques from that turn print above the answer. Path-escape check, typed at the prompt or passed as the first message: `Write 'pwned' to ../../evil.txt`. The file tools should refuse it.
 
-Evals (the whole graph, eight golden cases, pass rate plus any failures):
+`documents/` is a read-only corpus the `search_documents` tool retrieves from; `workspace/` is the agent's writable scratch.
+
+Evals (the whole graph, nine golden cases, pass rate plus any failures):
 
 ```bash
 pnpm eval
@@ -105,6 +107,10 @@ stdout stays the conversation (the answer and its tool/feedback lines); diagnost
 
 **Tool names are `verb_noun`.** The Wikipedia tool was `wikipedia_search_tool` while the others were `read_file` and `search_web`. It is now `wikipedia_search`.
 
+**Retrieval is lexical, not semantic.** `src/retrieval.ts` is a dependency-free TF-IDF retriever, rebuilt in memory at startup over `documents/`. It matches terms, not meaning, so it misses paraphrases; embeddings would be a drop-in swap later. Each returned chunk carries its source path so the worker can cite it.
+
+**The evaluator accepts a document path as a source.** Its rule was URL-only, which would have failed every retrieval answer and burned the revision cap; it now also takes a cited `documents/…` path for facts from the local corpus.
+
 **The workspace prefix check includes the path separator.** `startsWith(workspace)` alone treats `workspace-evil` as inside `workspace`. The guard now requires the resolved path to be the workspace itself or to sit under `workspace/`. Broader injection defense for untrusted content is Phase 6.
 
 **The local event stream is deliberately narrow.** LangSmith already shows node spans, model calls, and tool spans, so emitting those ourselves would be a second copy. `src/log.ts` covers only what tracing cannot see — an in-tool retry or timeout — plus the counters behind the per-turn `[trace]` summary.
@@ -115,7 +121,7 @@ stdout stays the conversation (the answer and its tool/feedback lines); diagnost
 
 ## Evaluation
 
-The eval harness runs the whole graph on every case. Last full run: **8/8 passed** on 8 Oct 2026, after the revision cap landed. An earlier run was 7/8: the old `wikipedia` case failed because the model cited a source URL that was not on `wikipedia.org`. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
+The eval harness runs the whole graph on every case. Last full run: **9/9 passed** on 8 Oct 2026. An earlier run was 7/8: the old `wikipedia` case failed because the model cited a source URL that was not on `wikipedia.org`. The check was broadened to accept any source URL (matching the evaluator's own rule) and the case was renamed to `sourced fact`. Run `pnpm eval` to confirm the current count.
 
 | Case | What had to be true |
 | --- | --- |
@@ -126,6 +132,7 @@ The eval harness runs the whole graph on every case. Last full run: **8/8 passed
 | path escape refused | The request to write `../evil.txt` is refused and the file is not created. |
 | tool unavailable | With `TAVILY_API_KEY` cleared, the answer reports `search_web` is unavailable. |
 | revision detected | The final answer cites a source and the graph made at least two AI turns (revision happened). |
+| retrieval | The answer names the pangolin `Otto` from `documents/mascot.md` (an invented fact, only in the corpus). |
 | ambiguous request | The evaluator asks for clarification on "Tell me about it." |
 
 Checks are deterministic: string matches, file-system checks, and message-count checks. They do not re-grade the judge with a second model. Failures print the case name, the reason, and the answer text.
@@ -141,8 +148,10 @@ Checks are deterministic: string matches, file-system checks, and message-count 
 - Web and file text is trusted by the worker. Prompt injection in that content is Phase 6.
 - Retries happen inside a tool body, so they do not appear in the LangSmith trace; they show up only in the local events and the `[trace]` summary.
 - Cost estimates come from a hand-maintained price table in `config.ts` and will drift; tokens are reported raw regardless.
+- Retrieval is lexical (TF-IDF): it matches terms, not meaning, and misses paraphrases. Embeddings would be a later swap.
+- Text from retrieved documents is trusted by the worker; prompt injection in it is Phase 6.
 
-Next is Phase 5: retrieval and prompt-injection defense for untrusted page and file text.
+Next is Phase 6: prompt-injection defense for untrusted page and file text.
 
 ## Cost and latency
 

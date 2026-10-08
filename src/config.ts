@@ -50,6 +50,9 @@ export const maxRevisions = 3;
 
 export const workspaceDir = path.resolve(rootDir, "workspace");
 
+/** Read-only corpus for the search_documents tool. */
+export const documentsDir = path.resolve(rootDir, "documents");
+
 /** Applies only to network tools (search_web, wikipedia_search). */
 export const toolTimeoutMs = positiveIntEnv("SIDEKICK_TOOL_TIMEOUT_MS", 8000);
 
