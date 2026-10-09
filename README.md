@@ -1,8 +1,8 @@
 # Sidekick
 
-A Node agent that does not stop at the first answer. A tool-using worker drafts a response, an LLM evaluator judges it against success criteria, and the worker revises until the evaluator accepts it, asks the user for input, or the revision cap is reached.
+A single LLM call often sounds confident but is vague, unsourced, or wrong. Sidekick is a self-verifying agent: a tool-using worker drafts an answer, a second model judges it against success criteria, and the worker revises until it passes — or the revision cap is reached.
 
-Plain tutorial agents are `question → tool calls → answer`. Sidekick adds `answer → critique → revise → loop`. That verification loop is the project. The tools and the checkpointer are there so the loop has something real to judge.
+Plain tutorial agents are `question → tool calls → answer`. Sidekick adds `answer → critique → revise → loop`. That verification loop is the project; the tools and the checkpointer are there so the loop has something real to judge.
 
 This is a reference implementation of the worker-plus-verifier pattern, written to be read. It is not a product and not a research claim.
 
